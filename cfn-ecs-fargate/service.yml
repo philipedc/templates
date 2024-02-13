@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Metadata:
+  AWS::CloudFormation::Interface: 
+    ParameterGroups:
+      - 
+        Label: 
+          default: "Import Stack"
+        Parameters: 
+          - ImportStack
+      - 
+        Label: 
+          default: "Container Related Parameters"
+        Parameters:
+          - ContainerImage
+          - Port
+
+Parameters:
+  ImportStack:
+    Description: Stack name that contains the VPC, security group and subnets
+    Type: String
+
+  ContainerImage:
+    Default: "nginx"
+    Description: "The image of the container"
+    Type: String
+  
+  Port:
+    Default: 80
+    Description: "The port of the container"
+    Type: Number
+
+Resources:
+
+  ECSTaskDefinition:
+    Type: 'AWS::ECS::TaskDefinition'
+    Properties:
+      Family: !Sub "${AWS::StackName}-Task-Definition"
+      Cpu: 256
+      Memory: 512
+      NetworkMode: awsvpc
+      ExecutionRoleArn:
+        Fn::ImportValue: !Sub "${ImportStack}-ECSExecutionRole"
+      ContainerDefinitions:
+        - Name: !Sub "${AWS::StackName}-Container"
+          Image: !Ref ContainerImage
+          Essential: True
+          PortMappings:
+            - ContainerPort: !Ref Port
+              Protocol: tcp
+
+  ALBTargetGroup:
+    Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
+    Properties:
+      Name: !Sub "${AWS::StackName}-TargetGroup"
+      Port: !Ref Port
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: 
+        Fn::ImportValue: !Sub "${ImportStack}-Vpc"
+
+  ECSService:
+    Type: 'AWS::ECS::Service'
+    DependsOn:
+      - ALBTargetGroup
+    Properties:
+      Cluster:
+        Fn::ImportValue: !Sub "${ImportStack}-ECSCluster"
+      LaunchType: FARGATE
+      DesiredCount: 1
+      TaskDefinition: !Ref ECSTaskDefinition
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          Subnets:
+            - Fn::ImportValue: !Sub "${ImportStack}-PublicSubnet1"
+            - Fn::ImportValue: !Sub "${ImportStack}-PublicSubnet2"
+            - Fn::ImportValue: !Sub "${ImportStack}-PublicSubnet3"
+          SecurityGroups:
+            - Fn::ImportValue: !Sub "${ImportStack}-ContainerSecurityGroup"
+      LoadBalancers:
+        - ContainerName: !Sub "${AWS::StackName}-Container"
+          ContainerPort: !Ref Port
+          TargetGroupArn: !Ref ALBTargetGroup
+
+  Listener:
+    Type: 'AWS::ElasticLoadBalancingV2::Listener'
+    DependsOn:
+      - ALBTargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: 
+        Fn::ImportValue: !Sub "${ImportStack}-ALB"
+      Port: !Ref Port
+      Protocol: HTTP
+
+  
