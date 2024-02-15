@@ -34,6 +34,8 @@ Resources:
 
   ECSTaskDefinition:
     Type: 'AWS::ECS::TaskDefinition'
+    DependsOn:
+      - LogGroup
     Properties:
       Family: !Sub "${AWS::StackName}-Task-Definition"
       Cpu: 256
@@ -48,6 +50,13 @@ Resources:
           PortMappings:
             - ContainerPort: !Ref Port
               Protocol: tcp
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Sub "/ecs/${AWS::StackName}-LogGroup"
+              awslogs-region: !Ref "AWS::Region"
+              awslogs-stream-prefix: !Sub "${AWS::StackName}-LogStream"
+
 
   ALBTargetGroup:
     Type: 'AWS::ElasticLoadBalancingV2::TargetGroup'
@@ -63,6 +72,8 @@ Resources:
     Type: 'AWS::ECS::Service'
     DependsOn:
       - ALBTargetGroup
+      - Listener
+      - ECSTaskDefinition
     Properties:
       Cluster:
         Fn::ImportValue: !Sub "${ImportStack}-ECSCluster"
@@ -96,4 +107,8 @@ Resources:
       Port: !Ref Port
       Protocol: HTTP
 
-  
+  LogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub "/ecs/${AWS::StackName}-LogGroup"
+      RetentionInDays: 7
